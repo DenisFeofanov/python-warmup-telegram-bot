@@ -1,134 +1,122 @@
 import os
-from datetime import datetime, time
 import logging
+from datetime import datetime, time
+import sqlite3
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
-from database import Database
 
 # Load environment variables
 load_dotenv()
+TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-# Enable logging
+# Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# States for conversation handler
-EXERCISE, REPS = range(2)
+# Database setup
+def setup_database():
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS challenges
+        (id TEXT PRIMARY KEY,
+         name TEXT NOT NULL,
+         completed BOOLEAN DEFAULT FALSE,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+    ''')
+    conn.commit()
+    conn.close()
 
-db = Database()
-
+# Command handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Welcome to Morning Workout Bot! 💪\n\n"
+        "Welcome to Daily Warmup Tracker!\n\n"
         "Commands:\n"
-        "/set_challenge - Set a new exercise challenge\n"
-        "/my_challenges - View your current challenges\n"
-        "/complete - Mark an exercise as complete"
+        "/new <name> - Create a new challenge\n"
+        "/status - View all challenges\n"
+        "/complete <id> - Complete a challenge\n"
+        "/help - Show this help message"
     )
 
-async def set_challenge_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("What exercise would you like to add? (e.g., pushups, squats)")
-    return EXERCISE
-
-async def set_challenge_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['exercise'] = update.message.text.lower()
-    await update.message.reply_text("How many repetitions per day?")
-    return REPS
-
-async def set_challenge_reps(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        reps = int(update.message.text)
-        exercise = context.user_data['exercise']
-        user_id = update.effective_user.id
-        
-        db.set_challenge(user_id, exercise, reps)
-        await update.message.reply_text(f"Challenge set: {reps} {exercise} per day!")
-        return ConversationHandler.END
-    except ValueError:
-        await update.message.reply_text("Please enter a valid number.")
-        return REPS
-
-async def my_challenges(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    challenges = db.get_challenges(user_id)
-    
-    if not challenges:
-        await update.message.reply_text("You haven't set any challenges yet. Use /set_challenge to add one!")
+async def new_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Please provide a challenge name: /new <name>")
         return
 
-    message = "Your daily challenges:\n\n"
-    for exercise, reps in challenges:
-        message += f"• {reps} {exercise}\n"
-    
-    await update.message.reply_text(message)
+    name = ' '.join(context.args)
+    challenge_id = f"ch_{int(datetime.now().timestamp())}"[-6:]  # Generate short ID
 
-async def complete_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    challenges = db.get_challenges(user_id)
-    
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    c.execute('INSERT INTO challenges (id, name) VALUES (?, ?)', (challenge_id, name))
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(f"Challenge created!\nID: {challenge_id}\nName: {name}")
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    c.execute('SELECT id, name, completed FROM challenges')
+    challenges = c.fetchall()
+    conn.close()
+
     if not challenges:
-        await update.message.reply_text("You haven't set any challenges yet!")
+        await update.message.reply_text("No challenges found. Create one with /new <name>")
         return
 
-    keyboard = []
-    for exercise, reps in challenges:
-        keyboard.append([InlineKeyboardButton(f"{exercise} ({reps} reps)", callback_data=f"complete_{exercise}")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Which exercise did you complete?", reply_markup=reply_markup)
+    status_text = "Current Challenges:\n\n"
+    for ch_id, name, completed in challenges:
+        status = "✅" if completed else "❌"
+        status_text += f"{ch_id}: {name} {status}\n"
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    exercise = query.data.replace("complete_", "")
-    user_id = query.from_user.id
-    
-    # Get target reps for this exercise
-    challenges = dict(db.get_challenges(user_id))
-    target_reps = challenges.get(exercise)
-    
-    db.mark_exercise_complete(user_id, exercise, target_reps)
-    await query.edit_message_text(f"Marked {target_reps} {exercise} as complete! 💪")
+    await update.message.reply_text(status_text)
 
-async def check_incomplete_exercises(context: ContextTypes.DEFAULT_TYPE):
-    # Get all users with incomplete exercises
-    job = context.job
-    user_id = job.data  # Assuming job.data contains user_id
+async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Please provide a challenge ID: /complete <id>")
+        return
+
+    challenge_id = context.args[0]
     
-    incomplete = db.get_incomplete_exercises(user_id)
-    if incomplete:
-        message = "You still haven't completed these exercises today:\n\n"
-        for exercise, reps in incomplete:
-            message += f"• {reps} {exercise}\n"
-        
-        await context.bot.send_message(chat_id=user_id, text=message)
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    c.execute('UPDATE challenges SET completed = TRUE WHERE id = ?', (challenge_id,))
+    if c.rowcount == 0:
+        await update.message.reply_text("Challenge not found!")
+    else:
+        conn.commit()
+        await update.message.reply_text(f"Challenge {challenge_id} completed! 🎉")
+    conn.close()
+
+async def reset_daily(context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    c.execute('UPDATE challenges SET completed = FALSE')
+    conn.commit()
+    conn.close()
+    logging.info("Daily challenges reset")
 
 def main():
-    app = Application.builder().token(os.getenv('BOT_TOKEN')).build()
+    # Set up database
+    setup_database()
 
-    # Add conversation handler for setting challenges
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('set_challenge', set_challenge_start)],
-        states={
-            EXERCISE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_challenge_exercise)],
-            REPS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_challenge_reps)]
-        },
-        fallbacks=[]
-    )
+    # Initialize bot
+    application = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("my_challenges", my_challenges))
-    app.add_handler(CommandHandler("complete", complete_exercise))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    # Add command handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", start))
+    application.add_handler(CommandHandler("new", new_challenge))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("complete", complete_challenge))
 
-    # Schedule daily reminder at 12:00
-    job_queue = app.job_queue
-    reminder_time = time(12, 0)  # 12:00
-    job_queue.run_daily(check_incomplete_exercises, reminder_time)
+    # Schedule daily reset at midnight
+    job_queue = application.job_queue
+    job_queue.run_daily(reset_daily, time(hour=0, minute=0))
 
-    app.run_polling()
+    # Start the bot
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
