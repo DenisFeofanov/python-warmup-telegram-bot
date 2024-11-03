@@ -191,6 +191,34 @@ async def leave_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn.close()
 
+async def notify_members(context: ContextTypes.DEFAULT_TYPE, challenge_id: str, 
+                        completer_id: int, challenge_name: str):
+    """Notify other challenge members about completion"""
+    conn = sqlite3.connect('warmup_challenges.db')
+    c = conn.cursor()
+    
+    # Get completer's name
+    completer = await context.bot.get_chat(completer_id)
+    completer_name = completer.first_name
+    
+    # Get all members except the completer
+    c.execute('''
+        SELECT user_id FROM challenge_members 
+        WHERE challenge_id = ? AND user_id != ?
+    ''', (challenge_id, completer_id))
+    
+    members = c.fetchall()
+    conn.close()
+    
+    # Send notification to each member
+    notification_text = f"🎉 {completer_name} has completed the challenge '{challenge_name}'!"
+    
+    for (member_id,) in members:
+        try:
+            await context.bot.send_message(chat_id=member_id, text=notification_text)
+        except Exception as e:
+            logging.error(f"Failed to send notification to user {member_id}: {e}")
+
 async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Please provide a challenge ID: /complete <id>")
@@ -198,22 +226,25 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     challenge_id = context.args[0]
     user_id = update.effective_user.id
-    today = datetime.now().date().isoformat()  # Get today's date in YYYY-MM-DD format
+    today = datetime.now().date().isoformat()
     
     conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
-    # Check if challenge exists and user is a member
+    # Check if challenge exists and user is a member, also get challenge name
     c.execute('''
-        SELECT 1 FROM challenges c
+        SELECT c.name FROM challenges c
         JOIN challenge_members cm ON c.id = cm.challenge_id
         WHERE c.id = ? AND cm.user_id = ?
     ''', (challenge_id, user_id))
     
-    if not c.fetchone():
+    result = c.fetchone()
+    if not result:
         await update.message.reply_text("Challenge not found or you're not a member!")
         conn.close()
         return
+    
+    challenge_name = result[0]
 
     # Check if already completed today
     c.execute('''
@@ -231,6 +262,9 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ''', (challenge_id, user_id, today))
         conn.commit()
         await update.message.reply_text(f"Challenge {challenge_id} completed! 🎉")
+        
+        # Notify other members
+        await notify_members(context, challenge_id, user_id, challenge_name)
     
     conn.close()
 
