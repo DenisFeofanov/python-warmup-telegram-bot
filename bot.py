@@ -17,12 +17,21 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 def setup_database():
     conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
+    # Challenges table - stores challenge definitions
     c.execute('''
         CREATE TABLE IF NOT EXISTS challenges
         (id TEXT PRIMARY KEY,
          name TEXT NOT NULL,
-         completed BOOLEAN DEFAULT FALSE,
          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+    ''')
+    # Challenge completions table - stores user-specific completions
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS challenge_completions
+        (challenge_id TEXT,
+         user_id INTEGER,
+         completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (challenge_id, user_id),
+         FOREIGN KEY (challenge_id) REFERENCES challenges(id))
     ''')
     conn.commit()
     conn.close()
@@ -55,9 +64,19 @@ async def new_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Challenge created!\nID: {challenge_id}\nName: {name}")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
     conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
-    c.execute('SELECT id, name, completed FROM challenges')
+    # Modified query to check user-specific completions
+    c.execute('''
+        SELECT c.id, c.name, CASE WHEN cc.user_id IS NOT NULL THEN 1 ELSE 0 END as completed
+        FROM challenges c
+        LEFT JOIN challenge_completions cc 
+            ON c.id = cc.challenge_id 
+            AND cc.user_id = ?
+            AND date(cc.completed_at) = date('now')
+    ''', (user_id,))
     challenges = c.fetchall()
     conn.close()
 
@@ -78,30 +97,40 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     challenge_id = context.args[0]
+    user_id = update.effective_user.id
     
     conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
-    c.execute('UPDATE challenges SET completed = TRUE WHERE id = ?', (challenge_id,))
-    if c.rowcount == 0:
+    
+    # Check if challenge exists
+    c.execute('SELECT id FROM challenges WHERE id = ?', (challenge_id,))
+    if not c.fetchone():
         await update.message.reply_text("Challenge not found!")
+        conn.close()
+        return
+
+    # Check if already completed today
+    c.execute('''
+        SELECT 1 FROM challenge_completions 
+        WHERE challenge_id = ? AND user_id = ? 
+        AND date(completed_at) = date('now')
+    ''', (challenge_id, user_id))
+    
+    if c.fetchone():
+        await update.message.reply_text("You've already completed this challenge today! 🎯")
     else:
+        # Add completion record
+        c.execute('''
+            INSERT INTO challenge_completions (challenge_id, user_id)
+            VALUES (?, ?)
+        ''', (challenge_id, user_id))
         conn.commit()
         await update.message.reply_text(f"Challenge {challenge_id} completed! 🎉")
+    
     conn.close()
-
-async def reset_daily(context: ContextTypes.DEFAULT_TYPE):
-    conn = sqlite3.connect('warmup_challenges.db')
-    c = conn.cursor()
-    c.execute('UPDATE challenges SET completed = FALSE')
-    conn.commit()
-    conn.close()
-    logging.info("Daily challenges reset")
 
 def main():
-    # Set up database
     setup_database()
-
-    # Initialize bot
     application = Application.builder().token(TOKEN).build()
 
     # Add command handlers
@@ -111,11 +140,7 @@ def main():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("complete", complete_challenge))
 
-    # Schedule daily reset at midnight
-    job_queue = application.job_queue
-    job_queue.run_daily(reset_daily, time(hour=0, minute=0))
-
-    # Start the bot
+    # Remove the job queue setup since we don't need daily reset anymore
     application.run_polling()
 
 if __name__ == '__main__':
