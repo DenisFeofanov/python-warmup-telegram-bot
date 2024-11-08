@@ -5,8 +5,6 @@ import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-import asyncio
-from threading import Thread
 
 # Load environment variables
 load_dotenv()
@@ -270,7 +268,7 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     conn.close()
 
-async def main():
+def main():
     setup_database()
     application = Application.builder().token(TOKEN).build()
 
@@ -283,30 +281,7 @@ async def main():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("complete", complete_challenge))
 
-    # Add a basic web server to keep Render happy
-    from quart import Quart
-    app = Quart(__name__)
-    
-    @app.route('/')
-    async def home():
-        return 'Bot is running!'
-    
-    # Start both the bot and web server
-    async def start_bot():
-        await application.initialize()
-        await application.start()
-        await application.run_polling()
-    
-    import asyncio
-    bot_task = asyncio.create_task(start_bot())
-    
-    # Run Quart app
-    port = int(os.environ.get('PORT', 8080))
-    await app.run_task(host='0.0.0.0', port=port)
-    
-    # Cleanup
-    await application.stop()
+    application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    main()
