@@ -270,7 +270,7 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     conn.close()
 
-def main():
+async def main():
     setup_database()
     application = Application.builder().token(TOKEN).build()
 
@@ -283,19 +283,30 @@ def main():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("complete", complete_challenge))
 
-    # Run the bot until the user presses Ctrl-C
-    if os.environ.get('ENVIRONMENT') == 'production':
-        # Use webhook in production (Render)
-        webhook_url = os.environ.get('WEBHOOK_URL')
-        port = int(os.environ.get('PORT', 8080))
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            webhook_url=webhook_url
-        )
-    else:
-        # Use polling in development
-        application.run_polling(drop_pending_updates=False)
+    # Add a basic web server to keep Render happy
+    from quart import Quart
+    app = Quart(__name__)
+    
+    @app.route('/')
+    async def home():
+        return 'Bot is running!'
+    
+    # Start both the bot and web server
+    async def start_bot():
+        await application.initialize()
+        await application.start()
+        await application.run_polling()
+    
+    import asyncio
+    bot_task = asyncio.create_task(start_bot())
+    
+    # Run Quart app
+    port = int(os.environ.get('PORT', 8080))
+    await app.run_task(host='0.0.0.0', port=port)
+    
+    # Cleanup
+    await application.stop()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
