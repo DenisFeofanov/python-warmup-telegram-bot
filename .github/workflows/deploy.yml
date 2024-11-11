@@ -17,4 +17,4 @@ jobs:
           script: |
             cd Projects/python-warmup-telegram-bot
             git pull
-            docker-compose up -d --build
+            docker compose up -d --build
