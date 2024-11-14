@@ -6,29 +6,7 @@
 
 ## Installation
 
-0. Copy .env.example into .env and fill your bot token
-
-### Docker start
-
-- Run the container
-
-```
-docker compose up --d
-```
-
-- View logs
-
-```
-docker compose logs -f
-```
-
-- Stop the container
-
-```
-docker compose down
-```
-
-### Manual start
+1. Copy .env.example into .env and fill your bot token
 
 1. Create virtual environment for python
 

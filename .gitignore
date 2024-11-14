@@ -181,6 +181,5 @@ my-env
 
 # database file
 warmup_challenges.db
-data/
 
 # End of https://www.toptal.com/developers/gitignore/api/python

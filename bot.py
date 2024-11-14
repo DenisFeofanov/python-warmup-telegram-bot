@@ -15,7 +15,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # Database setup
 def setup_database():
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     # Challenges table
@@ -72,7 +72,7 @@ async def new_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenge_id = f"ch_{int(datetime.now().timestamp())}"[-6:]
     user_id = update.effective_user.id
 
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     # Create challenge
@@ -101,7 +101,7 @@ async def join_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenge_id = context.args[0]
     user_id = update.effective_user.id
 
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
 
     # Check if challenge exists
@@ -133,7 +133,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     today = datetime.now().date().isoformat()
     
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     c.execute('''
@@ -177,7 +177,7 @@ async def leave_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     challenge_id = context.args[0]
     user_id = update.effective_user.id
 
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     c.execute('DELETE FROM challenge_members WHERE challenge_id = ? AND user_id = ?',
@@ -194,7 +194,7 @@ async def leave_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def notify_members(context: ContextTypes.DEFAULT_TYPE, challenge_id: str, 
                         completer_id: int, challenge_name: str):
     """Notify other challenge members about completion"""
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     # Get completer's name
@@ -228,7 +228,7 @@ async def complete_challenge(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     today = datetime.now().date().isoformat()
     
-    conn = sqlite3.connect('data/warmup_challenges.db')
+    conn = sqlite3.connect('warmup_challenges.db')
     c = conn.cursor()
     
     # Check if challenge exists and user is a member, also get challenge name
