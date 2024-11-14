@@ -1,11 +1,12 @@
-version: "3.8"
-
 services:
-  telegram-bot:
+  bot:
     build: .
-    container_name: morning-workout-bot
-    restart: always
     volumes:
-      - ./warmup_challenges.db:/app/warmup_challenges.db
+      - .:/app
+      - bot-data:/app/data
     env_file:
       - .env
+    restart: unless-stopped
+
+volumes:
+  bot-data:
