@@ -6,20 +6,21 @@
 
 ## Installation
 
-1. Copy .env.example into .env and fill your bot token
+1. Copy .env.example into .env and fill it
 
-1. Create virtual environment for python
+2. Create virtual environment for python
 
 ```
 sudo apt install python3-full
 python3 -m venv my-env
-source my-env/bin/activate
 ```
 
-2. Install dependencies
+3. Install dependencies and run
 
-`pip install -r requirements.txt`
+```
+source my-env/bin/activate
+pip install -r requirements.txt
+python bot.py
+```
 
-3. Run bot
-
-`python bot.py`
+For future dev runs run vscode task `Run bot and watch`

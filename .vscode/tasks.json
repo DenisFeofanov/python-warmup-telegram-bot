@@ -4,7 +4,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "activate-and-run-bot",
+      "label": "Run bot and watch",
       "type": "shell",
       "command": "source my-env/bin/activate && pymon bot.py",
       "group": {
